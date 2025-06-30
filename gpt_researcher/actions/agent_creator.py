@@ -1,6 +1,7 @@
 import json
 import re
 import json_repair
+import os
 from ..utils.llm import create_chat_completion
 from ..prompts import PromptFamily
 
@@ -31,12 +32,27 @@ async def choose_agent(
     response = None  # Initialize response to ensure it's defined
 
     try:
-        response = await create_chat_completion(
-            model=cfg.smart_llm_model,
+        # Check if we're using a local MLX-like server
+        base_url = os.environ.get("OPENAI_BASE_URL", "")
+        is_local_server = "localhost" in base_url or "127.0.0.1" in base_url
+
+        if cfg.smart_llm_provider == "openai" and is_local_server:
+            # For local servers like MLX, combine system and user messages to avoid issues
+            system_content = f"{prompt_family.auto_agent_instructions()}"
+            user_content = f"task: {query}"
+            combined_content = f"{system_content}\\n\\n{user_content}"
+            
+            messages = [{"role": "user", "content": combined_content}]
+        else:
+            # Original format for other providers
             messages=[
                 {"role": "system", "content": f"{prompt_family.auto_agent_instructions()}"},
                 {"role": "user", "content": f"task: {query}"},
-            ],
+            ]
+
+        response = await create_chat_completion(
+            model=cfg.smart_llm_model,
+            messages=messages,
             temperature=0.15,
             llm_provider=cfg.smart_llm_provider,
             llm_kwargs=cfg.llm_kwargs,
